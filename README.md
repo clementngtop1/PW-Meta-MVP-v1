@@ -36,6 +36,12 @@ For existing Ads imports that predate Agent selection, open **Import history** a
 
 GitHub stores the source code; GitHub Pages cannot run this app's authenticated API, D1 database, or private R2 archive. A client-review site needs a separate Cloudflare Worker, D1 database, and private R2 bucket. The review environment begins empty; local customer reports and local database files are not part of the source repository or deployment.
 
+## GitHub Pages interactive review demo
+
+The `/docs` directory is a separate, static demo for [GitHub Pages](https://clementngtop1.github.io/PW-Meta-MVP-v1/). It uses fictional Lead, Ads, Commission and import-history records only. Reviewers can navigate the six screens, change dates and Agent Code, search demo leads, and download CSVs of the currently displayed synthetic data. It does **not** include administrator login, real file imports, private archives, persistent changes or access to local customer records. It must not be used as the production application.
+
+To preview the Pages demo locally, run `npm run demo:local` and open `http://localhost:5174/PW-Meta-MVP-v1/`. Its model checks run with `node --test tests/pages-demo.test.mjs`. The real application remains at `http://localhost:5172` and requires its own backend services.
+
 For a review build, set both `PW_REVIEW_D1_ID` (the provisioned D1 database ID) and `PW_REVIEW_R2_BUCKET` (the private bucket name) in the build environment. The build then names the Worker `pw-meta-mvp-v1-review` and binds it to the review resources. Without both variables, builds retain the existing local-only placeholder bindings. Do not deploy a build with placeholder bindings. Apply the migrations to the review D1 database and create a dedicated administrator account privately before inviting clients. R2 must be enabled in the Cloudflare account before imports can work; no public bucket access is needed.
 
 ## Local development and first administrator

@@ -8,6 +8,7 @@
   "scripts": {
     "install:ci": "node scripts/install-ci.mjs",
     "dev": "node scripts/run-framework.mjs dev",
+    "demo:local": "node scripts/serve-pages-demo.mjs",
     "build": "node scripts/run-framework.mjs build",
     "start": "node --import ./scripts/sites-env.mjs ./scripts/start-local.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern cloudflare-env.d.ts",

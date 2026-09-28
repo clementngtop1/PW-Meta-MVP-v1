@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Interactive Propwealth Meta Attribution preview with synthetic records only.">
+  <title>Propwealth Meta Attribution · Review Demo</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" aria-label="Main navigation">
+      <div class="brand"><span class="brand-mark">P</span><span><strong>Propwealth</strong><small>Meta Attribution</small></span></div>
+      <nav id="side-nav" class="side-nav"></nav>
+      <div class="sidebar-note">PUBLIC REVIEW DEMO<br><span>Fictional records only</span></div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div><div class="eyebrow">PROPWEALTH · META ATTRIBUTION</div><h1 id="page-title">Overview</h1></div>
+        <div class="top-actions">
+          <label class="field"><span>From</span><input id="from-date" type="date" value="2026-08-01"></label>
+          <label class="field"><span>To</span><input id="to-date" type="date" value="2026-09-30"></label>
+          <button id="apply-dates" class="button button-quiet" type="button">Apply</button>
+          <button id="import-button" class="button button-primary" type="button">Import data</button>
+        </div>
+      </header>
+      <nav id="mobile-nav" class="mobile-nav" aria-label="Mobile navigation"></nav>
+      <div class="content">
+        <div class="demo-banner"><strong>Interactive review demo</strong><span>Synthetic data only · No login, real imports, or saved changes</span></div>
+        <div id="period-note" class="period-note"></div>
+        <div id="view" aria-live="polite"></div>
+      </div>
+    </main>
+  </div>
+  <dialog id="demo-dialog" aria-labelledby="demo-dialog-title">
+    <div class="dialog-body">
+      <div class="dialog-icon">ⓘ</div>
+      <h2 id="demo-dialog-title">Import is not available in this demo</h2>
+      <p>This GitHub Pages preview uses fictional records stored in your browser. The full MVP uses administrator login, a database, and a private archive for real report imports.</p>
+      <button id="close-dialog" class="button button-primary" type="button">Got it</button>
+    </div>
+  </dialog>
+  <noscript>This review demo needs JavaScript enabled.</noscript>
+</body>
+</html>
