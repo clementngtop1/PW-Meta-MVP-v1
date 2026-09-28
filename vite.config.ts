@@ -13,16 +13,23 @@ const { d1, r2 } = hostingConfig;
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const managedLinux = readExecutionProfile() === "managed-linux";
+const reviewD1Id = process.env.PW_REVIEW_D1_ID;
+const reviewR2Bucket = process.env.PW_REVIEW_R2_BUCKET;
+if (Boolean(reviewD1Id) !== Boolean(reviewR2Bucket)) {
+  throw new Error("Review deployment requires both PW_REVIEW_D1_ID and PW_REVIEW_R2_BUCKET.");
+}
+const reviewDeployment = Boolean(reviewD1Id);
 
 const localBindingConfig = {
+  ...(reviewDeployment ? { name: "pw-meta-mvp-v1-review" } : {}),
   main: "vinext/server/fetch-handler",
   compatibility_flags: ["nodejs_compat"],
   d1_databases: d1
     ? [
         {
           binding: d1,
-          database_name: "site-creator-d1",
-          database_id: SITE_CREATOR_PLACEHOLDER_DATABASE_ID,
+          database_name: reviewDeployment ? "pw-meta-mvp-v1-review-db" : "site-creator-d1",
+          database_id: reviewD1Id || SITE_CREATOR_PLACEHOLDER_DATABASE_ID,
         },
       ]
     : [],
@@ -30,7 +37,7 @@ const localBindingConfig = {
     ? [
         {
           binding: r2,
-          bucket_name: "site-creator-r2",
+          bucket_name: reviewR2Bucket || "site-creator-r2",
         },
       ]
     : [],

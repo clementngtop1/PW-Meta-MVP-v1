@@ -32,6 +32,12 @@ The older Booking / Sale import remains in the database for historical compatibi
 
 For existing Ads imports that predate Agent selection, open **Import history** and save the correct Agent ID on the completed Ads batch. The original workbook is not altered. Import the corrected commission test CSV as a new batch to replace the earlier Sales No snapshots; repeat imports of the exact same file are deduplicated. The monthly ROI report and its CSV then use the latest effective data. Legacy manual Lead links are retained only as historical records and no longer enter ROI.
 
+## Cloudflare client-review environment
+
+GitHub stores the source code; GitHub Pages cannot run this app's authenticated API, D1 database, or private R2 archive. A client-review site needs a separate Cloudflare Worker, D1 database, and private R2 bucket. The review environment begins empty; local customer reports and local database files are not part of the source repository or deployment.
+
+For a review build, set both `PW_REVIEW_D1_ID` (the provisioned D1 database ID) and `PW_REVIEW_R2_BUCKET` (the private bucket name) in the build environment. The build then names the Worker `pw-meta-mvp-v1-review` and binds it to the review resources. Without both variables, builds retain the existing local-only placeholder bindings. Do not deploy a build with placeholder bindings. Apply the migrations to the review D1 database and create a dedicated administrator account privately before inviting clients. R2 must be enabled in the Cloudflare account before imports can work; no public bucket access is needed.
+
 ## Local development and first administrator
 
 ```powershell
