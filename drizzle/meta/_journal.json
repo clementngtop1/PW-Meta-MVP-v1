@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1789963120545,
+      "tag": "0000_needy_gamora",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1790057511713,
+      "tag": "0001_far_makkari",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790394119699,
+      "tag": "0002_eager_spacker_dave",
+      "breakpoints": true
+    }
+  ]
+}
