@@ -1,13 +1,14 @@
 import { randomBytes, pbkdf2Sync } from "node:crypto";
-import { readdirSync } from "node:fs";
+import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { localStateRoot } from "./local-state.mjs";
 
 const [mode, suppliedEmail, persistTo] = process.argv.slice(2);
 const email = suppliedEmail?.trim().toLowerCase();
-if (!["--local", "--sql"].includes(mode) || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-  process.stderr.write("Usage: node scripts/admin-account.mjs --local|--sql admin@example.com [local-persist-directory]\n");
+if (!["--local", "--sql", "--sql-file"].includes(mode) || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  process.stderr.write("Usage: node scripts/admin-account.mjs --local|--sql|--sql-file admin@example.com [local-persist-directory]\n");
   process.exit(1);
 }
 if (!process.stdin.isTTY) {
@@ -52,5 +53,11 @@ if (mode === "--local") {
   process.stdout.write(`Local admin ${email} created/reset. All earlier sessions revoked.\n`);
 } else {
   const quote = value => `'${value.replaceAll("'", "''")}'`;
-  process.stdout.write(`-- Run in the intended D1 environment after applying migrations. Keep this hash SQL private.\nINSERT INTO admin_users(email,password_hash,password_salt) VALUES(${quote(email)},${quote(hash)},${quote(salt)}) ON CONFLICT(email) DO UPDATE SET password_hash=excluded.password_hash,password_salt=excluded.password_salt,active=1;\nDELETE FROM admin_sessions WHERE admin_id=(SELECT id FROM admin_users WHERE email=${quote(email)});\n`);
+  const sql = `-- Run in the intended D1 environment after applying migrations. Keep this hash SQL private.\nINSERT INTO admin_users(email,password_hash,password_salt) VALUES(${quote(email)},${quote(hash)},${quote(salt)}) ON CONFLICT(email) DO UPDATE SET password_hash=excluded.password_hash,password_salt=excluded.password_salt,active=1;\nDELETE FROM admin_sessions WHERE admin_id=(SELECT id FROM admin_users WHERE email=${quote(email)});\n`;
+  if (mode === "--sql-file") {
+    const directory = mkdtempSync(join(tmpdir(), "pw-review-admin-"));
+    const file = join(directory, "admin.sql");
+    writeFileSync(file, sql, { mode: 0o600, flag: "wx" });
+    process.stdout.write(`Private admin SQL written to ${file}. Delete it after applying to the intended D1 database.\n`);
+  } else process.stdout.write(sql);
 }
