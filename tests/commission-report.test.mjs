@@ -44,7 +44,8 @@ test("monthly ROI groups Ads and direct payout lines by agent and month without 
     INSERT INTO import_batches VALUES(5,'commissions','completed','2026-09-10',NULL);
     INSERT INTO ad_insights_daily VALUES('2026-08-05','C1','Campaign 1',100,1000,50,2);
     INSERT INTO ad_insights_daily VALUES('2026-08-06','C1','Campaign 1',25,200,10,3);
-    INSERT INTO ad_insights_daily VALUES('2026-09-05','C1','Campaign 1',50,500,20,2);`);
+    INSERT INTO ad_insights_daily VALUES('2026-09-05','C1','Campaign 1',50,500,20,2);
+    INSERT INTO ad_insights_daily VALUES('2026-08-07','C1','Campaign 1',40,400,15,NULL);`);
   const insert = db.prepare("INSERT INTO commission_sales VALUES(?,?,?,?)");
   const details = lines => JSON.stringify(lines.map(([agentCode,commissionType,commissionAmount,payoutDate]) => ({agentCode,commissionType,commissionAmount,payoutDate})));
   insert.run(4,"S1","2026-08-01",details([["PW00349","Commission",1000,"2026-08-15"]]));
@@ -65,12 +66,20 @@ test("monthly ROI groups Ads and direct payout lines by agent and month without 
   assert.equal((rows[2].commission-rows[2].spend)/rows[2].spend,3);
   assert.equal(rows[1].leads,1);
   assert.equal(rows[2].sales,2);
-  const summary = db.prepare(summarySql).get(...Array(6).fill(["2026-08-01","2026-08-31"]).flat());
+  const summary = db.prepare(summarySql).get("2026-08-01","2026-08-31","","","2026-08-01","2026-08-31","","","2026-08-01","2026-08-31");
   assert.equal(summary.spend,125);
   assert.equal(summary.leads,1);
-  const campaign = db.prepare(campaignSql).get(...Array(2).fill(["2026-08-01","2026-08-31"]).flat());
+  assert.equal(summary.unassignedAdRows,1);
+  assert.equal(summary.unassignedAdSpend,40);
+  const agentSummary = db.prepare(summarySql).get("2026-08-01","2026-08-31","PW00349","PW00349","2026-08-01","2026-08-31","PW00349","PW00349","2026-08-01","2026-08-31");
+  assert.equal(agentSummary.spend,100);
+  assert.equal(agentSummary.leads,1);
+  const campaign = db.prepare(campaignSql).get("2026-08-01","2026-08-31","","","2026-08-01","2026-08-31","","");
   assert.equal(campaign.spend,125);
   assert.equal(campaign.leads,1);
+  const agentCampaign = db.prepare(campaignSql).get("2026-08-01","2026-08-31","PW00349","PW00349","2026-08-01","2026-08-31","PW00349","PW00349");
+  assert.equal(agentCampaign.spend,100);
+  assert.equal(agentCampaign.leads,1);
   db.close();
 });
 

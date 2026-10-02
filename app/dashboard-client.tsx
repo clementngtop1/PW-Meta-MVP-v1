@@ -14,11 +14,12 @@ type Page = "Overview" | "Meta leads" | "Campaigns" | "Commission sales" | "Repo
 type Admin = { id: number; email: string };
 type Coverage = Record<string, { status: string; missingDays: number; batchIds: number[] }>;
 type Campaign = { campaignId: string | null; campaignName: string; spend: number | null; leads: number };
-type MonthlyRoi = { month: string; agentId: string; leads: number; adRows: number; spend: number; sales: number; commissionLines: number; commission: number; roi: number | null; adsBatchIds: string | null; commissionBatchIds: string | null };
+type MonthlyRoi = { month: string; agentId: string; leads: number; adRows: number; spend: number; sales: number; commissionLines: number; commission: number; roi: number | null; commissionBasedRoas: number | null; marketingRoas: null; adsBatchIds: string | null; commissionBatchIds: string | null };
+type RoasSummary = { commissionBasedRoas: number | null; marketingRoas: null; eligibleAdSpend: number; eligibleDirectCommission: number; eligibleAgentMonths: number; commissionWithoutAdSpend: number; excludedAgentMonths: number };
 type Lead = { metaLeadId: string; createdTime: string; fullName: string | null; phone: string | null; email: string | null; city: string | null; platform: string | null; purpose: string | null; campaignName: string | null; assignedAgentId: string | null; sourceBatchId: number | null; sourceFileName: string | null };
 type CommissionSale = { salesNo: string; sourceDate: string; projectName: string | null; unitNumber: string | null; lineCount: number; agentCode: string; commissionAmount: number; sourceBatchId: number; sourceFileName: string };
 type ImportItem = { id: number; type: string; fileName: string; status: string; totalRows: number; validRows: number; errorRows: number; createdRows: number; updatedRows: number; duplicateRows: number; outOfRangeRows: number; coverageStart: string | null; coverageEnd: string | null; agentId: string | null; effectiveAdsRows: number; uploadedByEmail: string | null; createdAt: string; completedAt: string | null; storageKey: string | null; message: string | null };
-type Report = { summary: Record<string, number>; campaigns: Campaign[]; monthlyRoi: MonthlyRoi[]; coverage: Coverage; imports: ImportItem[]; generatedAt: string; dates: { from: string; to: string } };
+type Report = { summary: Record<string, number>; campaigns: Campaign[]; monthlyRoi: MonthlyRoi[]; roas: RoasSummary; coverage: Coverage; imports: ImportItem[]; generatedAt: string; dates: { from: string; to: string } };
 type Preview = { fileHash: string; totalRows: number; validRows: number; createdRows: number; updatedRows: number; errorRows: number; duplicateRows: number; excludedRows: number; outOfRangeRows: number; dateVariationRows: number; coverageStart:string; coverageEnd:string; errors: { fileRow: number; issue: string }[]; conflicts: { fileRow: number; recordId: string; assignedAgentId: string }[]; duplicateBatch: { id: number } | null };
 
 async function importResponse<T extends { error?: string }>(response: Response): Promise<T> {
@@ -36,9 +37,10 @@ const nav: { label: Page; icon: React.ElementType }[] = [
   { label: "Overview", icon: LayoutDashboard }, { label: "Meta leads", icon: Users }, { label: "Campaigns", icon: Megaphone },
   { label: "Commission sales", icon: Building2 }, { label: "Reports", icon: BarChart3 }, { label: "Import history", icon: History },
 ];
-const money = (value: number | null | undefined) => value == null ? "Insufficient data" : new Intl.NumberFormat("en-MY", { style: "currency", currency: "MYR" }).format(Number(value) || 0);
+const money = (value: number | null | undefined) => value == null ? "N/A" : new Intl.NumberFormat("en-MY", { style: "currency", currency: "MYR" }).format(Number(value) || 0);
 const fmt = (value: number | null | undefined) => new Intl.NumberFormat("en-MY").format(Number(value) || 0);
 const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
+const multiple = (value: number | null) => value == null ? "N/A" : `${value.toFixed(2)}x`;
 
 export default function DashboardClient() {
   const [admin, setAdmin] = useState<Admin | null>(null);
@@ -55,8 +57,11 @@ export default function DashboardClient() {
   const [search, setSearch] = useState("");
   const [historyFilters, setHistoryFilters] = useState({ type: "", status: "", from: "", to: "" });
   const [reportAgentId, setReportAgentId] = useState<string>("PW00349");
+  const [overviewAgentId, setOverviewAgentId] = useState("");
+  const [overviewResult, setOverviewResult] = useState<{ key: string; report: Report } | null>(null);
   const [commissionAgentId, setCommissionAgentId] = useState<string>("PW00349");
   const commissionKey = `${commissionAgentId}:${activeDates?.from ?? ""}:${activeDates?.to ?? ""}`;
+  const overviewKey = `${overviewAgentId}:${activeDates?.from ?? ""}:${activeDates?.to ?? ""}`;
 
   const refresh = useCallback(async (dates?: { from: string; to: string }) => {
     const query = dates ? `?from=${dates.from}&to=${dates.to}` : "";
@@ -74,6 +79,16 @@ export default function DashboardClient() {
     if (response.ok) setAdmin((await response.json() as {admin:Admin}).admin);
   }).finally(() => setAuthReady(true)); }, []);
   useEffect(() => { if (!admin) return; void fetch("/api/dashboard",{cache:"no-store"}).then(r=>r.json() as Promise<Report>).then(next=>{setReport(next);setFrom(next.dates.from);setTo(next.dates.to);setActiveDates(next.dates);}).catch(error=>toast.error(String(error))); }, [admin]);
+  useEffect(() => {
+    if (!admin || !activeDates || !overviewAgentId) return;
+    const controller = new AbortController();
+    const params = new URLSearchParams({ from: activeDates.from, to: activeDates.to, agentId: overviewAgentId });
+    void fetch(`/api/dashboard?${params}`, { cache: "no-store", signal: controller.signal })
+      .then(async response => { if (!response.ok) throw new Error("Unable to load agent overview"); return response.json() as Promise<Report>; })
+      .then(next => { if (!controller.signal.aborted) setOverviewResult({ key: overviewKey, report: next }); })
+      .catch(error => { if (!controller.signal.aborted) toast.error(String(error)); });
+    return () => controller.abort();
+  }, [admin, activeDates, overviewAgentId, overviewKey]);
   useEffect(() => { if (!admin) return; const dateQuery=activeDates?`&from=${activeDates.from}&to=${activeDates.to}`:""; if (page === "Meta leads") void fetch(`/api/leads?search=${encodeURIComponent(search)}${dateQuery}`).then(r => r.json() as Promise<{leads?:Lead[]}>).then(d => setLeads(d.leads ?? [])); if (page === "Import history") { const params=new URLSearchParams(historyFilters); void fetch(`/api/import-history?${params}`,{cache:"no-store"}).then(r=>r.json() as Promise<{imports:ImportItem[]}>).then(d=>setImports(d.imports??[])); } }, [admin, page, search, activeDates, historyFilters]);
   useEffect(() => {
     if (!admin || page !== "Commission sales") return;
@@ -89,13 +104,14 @@ export default function DashboardClient() {
   const logout = async () => { await fetch("/api/auth/logout", { method: "POST" }); setAdmin(null); setReport(null); setLeads([]); };
   if (!authReady) return <main className="grid min-h-screen place-items-center bg-[#f3f6fa]"><Loader2 className="animate-spin text-blue-600" /></main>;
   if (!admin) return <Login onLogin={setAdmin} />;
-  const summary = report?.summary ?? {};
   const dates = activeDates;
-  const downloadHref = (dataset: "leads" | "ads" | "commissions" | "campaign" | "summary", term = "") => {
+  const selectedOverview = overviewAgentId ? (overviewResult?.key === overviewKey ? overviewResult.report : null) : report;
+  const downloadHref = (dataset: "leads" | "ads" | "commissions" | "campaign" | "summary", term = "", selectedAgent = "") => {
     if (!dates) return undefined;
     const params = new URLSearchParams({ dataset, from: dates.from, to: dates.to });
     if (dataset === "leads" && term.trim()) params.set("search", term.trim());
     if (dataset === "commissions") params.set("agentId", commissionAgentId);
+    if (selectedAgent) params.set("agentId", selectedAgent);
     return `/api/export?${params}`;
   };
   return <main className="min-h-screen bg-[#f3f6fa] text-[#142033]">
@@ -110,7 +126,7 @@ export default function DashboardClient() {
       <nav className="flex gap-1 overflow-x-auto border-b bg-white px-4 py-2 lg:hidden">{nav.map(({label,icon:Icon}) => <Button key={label} size="sm" variant={page===label?"secondary":"ghost"} onClick={() => setPage(label)}><Icon/>{label}</Button>)}<Button size="sm" variant="ghost" onClick={logout}>Sign out</Button></nav>
       <div className="mx-auto w-full max-w-[1500px] space-y-5 p-5 md:p-8">
         {dates && <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-950">Report period: {dates.from} – {dates.to} · Generated {report?.generatedAt ? new Date(report.generatedAt).toLocaleString() : "—"}</div>}
-        {page === "Overview" && <Overview summary={summary} campaigns={report?.campaigns ?? []} coverage={report?.coverage ?? {}} imports={report?.imports ?? []} summaryDownload={downloadHref("summary")}/>}
+        {page === "Overview" && (selectedOverview ? <Overview summary={selectedOverview.summary} roas={selectedOverview.roas} campaigns={selectedOverview.campaigns} coverage={selectedOverview.coverage} imports={selectedOverview.imports} agentId={overviewAgentId} onAgentChange={setOverviewAgentId} summaryDownload={downloadHref("summary","",overviewAgentId)}/> : <div className="rounded-xl border bg-white p-5 text-sm text-slate-600">Loading selected Agent Code overview…</div>)}
         {page === "Meta leads" && <Leads leads={leads} search={search} onSearch={setSearch} downloadHref={downloadHref("leads",search)} onChanged={() => { setSearch(""); const dates=activeDates?`?from=${activeDates.from}&to=${activeDates.to}`:""; void fetch(`/api/leads${dates}`).then(r=>r.json() as Promise<{leads:Lead[]}>).then(d=>setLeads(d.leads)); }}/ >}
         {page === "Campaigns" && <><div className="flex flex-wrap items-center justify-between gap-3"><Intro title="Campaign performance" text="Selected-period Ads spend and Meta Leads; monthly Agent ROI is in Reports."/><DownloadCsv href={downloadHref("campaign")}/></div><CampaignTable campaigns={report?.campaigns ?? []}/></>}
         {page === "Commission sales" && <CommissionSales sales={commissionResult?.key===commissionKey?commissionResult.sales:[]} loading={commissionResult?.key!==commissionKey} agentId={commissionAgentId} onAgentChange={setCommissionAgentId} downloadHref={downloadHref("commissions")}/>}
@@ -132,17 +148,19 @@ function Intro({title,text}:{title:string;text:string}) { return <div><h2 classN
 function DownloadCsv({href,className=""}:{href?:string;className?:string}) { return href ? <Button asChild size="sm" variant="outline" className={className}><a href={href}><Download/>Download CSV</a></Button> : null; }
 function Card({label,value,detail}:{label:string;value:string;detail:string}) { return <div className="rounded-2xl border bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">{label}</p><p className="mt-2 text-2xl font-semibold">{value}</p><p className="mt-3 text-xs text-slate-500">{detail}</p></div>; }
 
-function Overview({summary,campaigns,coverage,imports,summaryDownload}:{summary:Record<string,number>;campaigns:Campaign[];coverage:Coverage;imports:ImportItem[];summaryDownload?:string}) {
+function Overview({summary,roas,campaigns,coverage,imports,agentId,onAgentChange,summaryDownload}:{summary:Record<string,number>;roas:RoasSummary;campaigns:Campaign[];coverage:Coverage;imports:ImportItem[];agentId:string;onAgentChange:(value:string)=>void;summaryDownload?:string}) {
   const spendAvailable = Number(summary.adRows)>0;
-  return <div className="space-y-6"><div className="flex flex-wrap items-center justify-between gap-3"><Intro title="Source overview" text="Selected-period Meta Lead and Ads activity, with import coverage."/><DownloadCsv href={summaryDownload}/></div>
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"><Card label="Ad spend" value={spendAvailable?money(summary.spend):"Insufficient data"} detail={`${fmt(summary.impressions)} impressions`}/><Card label="Meta leads" value={fmt(summary.leads)} detail={`${fmt(summary.clicks)} link clicks`}/><Card label="Average CPL" value={spendAvailable&&summary.leads?money(summary.spend/summary.leads):"Insufficient data"} detail="Selected-period spend ÷ leads"/></div>
-    <section className="grid gap-4 lg:grid-cols-3">{["leads","ads","commissions"].map(type => <div key={type} className="rounded-2xl border bg-white p-5"><p className="font-semibold capitalize">{type} source {type==="commissions"?"availability":"coverage"}</p><p className={`mt-2 text-sm ${["covered","available"].includes(coverage[type]?.status)?"text-emerald-700":"text-amber-700"}`}>{type==="commissions"?(coverage[type]?.status==="available"?"Commission file imported":"No commission file imported"):`${coverage[type]?.status ?? "missing"} · ${coverage[type]?.missingDays ?? "?"} uncovered days`}</p><p className="mt-2 text-xs text-slate-500">Import batches: {coverage[type]?.batchIds.join(", ") || "none"}</p></div>)}</section>
+  return <div className="space-y-6"><div className="flex flex-wrap items-center justify-between gap-3"><Intro title="Source overview" text="Selected-period Meta Lead and agent-assigned Ads activity, with import coverage."/><div className="flex flex-wrap items-center gap-2"><label htmlFor="overview-agent" className="text-sm text-slate-600">Agent Code</label><select id="overview-agent" aria-label="Filter Overview Agent Code" value={agentId} onChange={event=>onAgentChange(event.target.value)} className="rounded-md border bg-white p-2 text-sm"><option value="">All agents</option>{LEAD_AGENT_IDS.map(id=><option key={id} value={id}>{id}</option>)}</select><DownloadCsv href={summaryDownload}/></div></div>
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"><Card label="Ad spend" value={spendAvailable?money(summary.spend):"N/A"} detail={`${fmt(summary.impressions)} impressions · assigned Ads only`}/><Card label="Meta leads" value={fmt(summary.leads)} detail={`${fmt(summary.clicks)} link clicks`}/><Card label="Average CPL" value={spendAvailable&&summary.leads?money(summary.spend/summary.leads):"N/A"} detail="Selected-period assigned spend ÷ leads"/><Card label="Commission-based ROAS (proxy)" value={multiple(roas.commissionBasedRoas)} detail={`${money(roas.eligibleDirectCommission)} direct commission ÷ ${money(roas.eligibleAdSpend)} eligible Ads spend`}/><Card label="Marketing ROAS (attributed)" value="N/A" detail="Ad-attributed sale revenue is not available"/></div>
+    <p className="rounded-xl border bg-white p-4 text-sm text-slate-600">Commission-based ROAS is direct commission ÷ Ads spend for the same Agent Code and month, shown as a multiplier. It is not verified ad-attributed revenue or business profit. ROI = (direct commission − Ads spend) ÷ Ads spend.</p>
+    <section className="grid gap-4 lg:grid-cols-3">{["leads","ads","commissions"].map(type => <div key={type} className="rounded-2xl border bg-white p-5"><p className="font-semibold capitalize">{type} source {type==="commissions"?"availability":"coverage"}</p><p className={`mt-2 text-sm ${["covered","available"].includes(coverage[type]?.status)?"text-emerald-700":"text-amber-700"}`}>{type==="commissions"?(coverage[type]?.status==="available"?"Direct commission lines in selected period":"No direct commission lines in selected period"):`${coverage[type]?.status ?? "missing"} · ${coverage[type]?.missingDays ?? "?"} uncovered days`}</p><p className="mt-2 text-xs text-slate-500">Import batches: {coverage[type]?.batchIds.join(", ") || "none"}</p></div>)}</section>
+    {(summary.unassignedAdRows>0 || roas.excludedAgentMonths>0) && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">Data gaps: {summary.unassignedAdRows>0 && <span>{fmt(summary.unassignedAdRows)} Ads rows ({money(summary.unassignedAdSpend)}) have no assigned Agent Code and are excluded from these KPIs. </span>}{roas.excludedAgentMonths>0 && <span>{fmt(roas.excludedAgentMonths)} agent-months contain {money(roas.commissionWithoutAdSpend)} direct commission without eligible Ads spend and are excluded from the ROAS numerator.</span>}</div>}
     {summary.legacyLeads>0 && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">{fmt(summary.legacyLeads)} leads have unknown legacy source.</div>}
     <CampaignTable campaigns={campaigns.slice(0,8)}/><div className="rounded-xl border bg-white p-4 text-sm">Latest import: {imports[0] ? `#${imports[0].id} · ${imports[0].fileName} · ${imports[0].status}` : "No traceable import yet"}</div>
   </div>;
 }
 
-function CampaignTable({campaigns}:{campaigns:Campaign[]}) { return <section className="overflow-x-auto rounded-2xl border bg-white shadow-sm"><div className="border-b p-5"><h2 className="font-semibold">Campaign performance</h2><p className="text-sm text-slate-500">Campaign-level spend and leads. Monthly ROI is grouped by Agent Code.</p></div><Table><TableHeader><TableRow><TableHead>No.</TableHead><TableHead>Campaign</TableHead><TableHead>Spend</TableHead><TableHead>Leads</TableHead><TableHead>CPL</TableHead></TableRow></TableHeader><TableBody>{campaigns.map((row,index) => <TableRow key={row.campaignId ?? index}><TableCell>{index+1}</TableCell><TableCell className="font-medium">{row.campaignName}</TableCell><TableCell>{money(row.spend)}</TableCell><TableCell>{fmt(row.leads)}</TableCell><TableCell>{row.spend!=null&&row.leads?money(row.spend/row.leads):"Insufficient data"}</TableCell></TableRow>)}</TableBody></Table></section>; }
+function CampaignTable({campaigns}:{campaigns:Campaign[]}) { return <section className="overflow-x-auto rounded-2xl border bg-white shadow-sm"><div className="border-b p-5"><h2 className="font-semibold">Campaign performance</h2><p className="text-sm text-slate-500">Campaign-level spend and leads. Monthly ROI is grouped by Agent Code.</p></div><Table><TableHeader><TableRow><TableHead>No.</TableHead><TableHead>Campaign</TableHead><TableHead>Spend</TableHead><TableHead>Leads</TableHead><TableHead>CPL</TableHead></TableRow></TableHeader><TableBody>{campaigns.map((row,index) => <TableRow key={row.campaignId ?? index}><TableCell>{index+1}</TableCell><TableCell className="font-medium">{row.campaignName}</TableCell><TableCell>{money(row.spend)}</TableCell><TableCell>{fmt(row.leads)}</TableCell><TableCell>{row.spend!=null&&row.leads?money(row.spend/row.leads):"N/A"}</TableCell></TableRow>)}</TableBody></Table></section>; }
 
 function Leads({leads,search,onSearch,onChanged,downloadHref}:{leads:Lead[];search:string;onSearch:(value:string)=>void;onChanged:()=>void;downloadHref?:string}) {
   const [selected,setSelected] = useState<string[]>([]); const [agentId,setAgentId] = useState(""); const [busy,setBusy] = useState(false);
@@ -173,9 +191,9 @@ function Reports({rows,agentId,onAgentChange,dates}:{rows:MonthlyRoi[];agentId:s
   const href = dates ? `/api/export?${new URLSearchParams({dataset:"monthly-roi",from:dates.from,to:dates.to,...(agentId?{agentId}:{})})}` : undefined;
   return <div className="space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-3"><Intro title="Monthly Agent ROI" text="Ads spend and direct commission payouts for the same Agent Code and month. No manual Lead link."/><div className="flex items-center gap-2"><select aria-label="Filter Agent ID" value={agentId} onChange={event=>onAgentChange(event.target.value)} className="rounded-md border bg-white p-2 text-sm"><option value="">All agents</option>{LEAD_AGENT_IDS.map(id=><option key={id} value={id}>{id}</option>)}</select><DownloadCsv href={href}/></div></div>
-    <section className="overflow-x-auto rounded-2xl border bg-white"><Table><TableHeader><TableRow>{["Month","Agent","Meta Leads","Ad spend","Direct commission","Commission lines","ROI","Status"].map(label=><TableHead key={label}>{label}</TableHead>)}</TableRow></TableHeader><TableBody>{selected.map(row=><TableRow key={`${row.month}:${row.agentId}`}><TableCell>{row.month}</TableCell><TableCell>{row.agentId}</TableCell><TableCell>{fmt(row.leads)}</TableCell><TableCell>{row.adRows?money(row.spend):"No Ads rows"}</TableCell><TableCell>{money(row.commission)}</TableCell><TableCell>{fmt(row.commissionLines)}</TableCell><TableCell>{row.roi==null?"—":pct(row.roi)}</TableCell><TableCell>{row.roi==null?"No agent-assigned ad spend":"Calculated"}</TableCell></TableRow>)}</TableBody></Table></section>
+    <section className="overflow-x-auto rounded-2xl border bg-white"><Table><TableHeader><TableRow>{["Month","Agent","Meta Leads","Ad spend","Direct commission","Commission lines","ROI","Commission-based ROAS","Marketing ROAS","Status"].map(label=><TableHead key={label}>{label}</TableHead>)}</TableRow></TableHeader><TableBody>{selected.map(row=><TableRow key={`${row.month}:${row.agentId}`}><TableCell>{row.month}</TableCell><TableCell>{row.agentId}</TableCell><TableCell>{fmt(row.leads)}</TableCell><TableCell>{row.adRows?money(row.spend):"No Ads rows"}</TableCell><TableCell>{money(row.commission)}</TableCell><TableCell>{fmt(row.commissionLines)}</TableCell><TableCell>{row.roi==null?"—":pct(row.roi)}</TableCell><TableCell>{multiple(row.commissionBasedRoas)}</TableCell><TableCell>{multiple(row.marketingRoas)}</TableCell><TableCell>{row.roi==null?"No agent-assigned ad spend":"Proxy calculated; attributed revenue unavailable"}</TableCell></TableRow>)}</TableBody></Table></section>
     {!selected.length && <p className="rounded-xl border bg-white p-4 text-sm text-slate-600">No rows for this agent in the selected period. Check the Ads batch Agent ID and imported payout dates.</p>}
-    <p className="rounded-xl border bg-white p-4 text-sm">ROI = (same-month direct Commission Amount − same-month agent Ads spend) ÷ Ads spend. Commission month uses each line&apos;s Commission Payout Date. Introducer and overriding lines are excluded. Zero or missing spend leaves ROI blank.</p>
+    <p className="rounded-xl border bg-white p-4 text-sm">ROI = (same-month direct Commission Amount − same-month agent Ads spend) ÷ Ads spend. Commission-based ROAS = direct Commission Amount ÷ Ads spend; it is a proxy, not ad-attributed revenue or profit. Marketing ROAS needs ad-attributed sale revenue and remains unavailable. Commission month uses each line&apos;s Commission Payout Date. Introducer and overriding lines are excluded. Zero or missing spend leaves ROI and commission-based ROAS blank.</p>
   </div>;
 }
 

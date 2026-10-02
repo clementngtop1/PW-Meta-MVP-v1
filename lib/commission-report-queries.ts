@@ -1,18 +1,35 @@
-// The overview and campaign view describe source activity only. Agent ROI is
-// calculated separately from monthly Ads and commission payout lines.
-export const summarySql = `SELECT
-  (SELECT COUNT(*) FROM leads WHERE is_test=0 AND date(created_time) BETWEEN ? AND ?) leads,
-  (SELECT COALESCE(SUM(spend),0) FROM ad_insights_daily WHERE day BETWEEN ? AND ?) spend,
-  (SELECT COUNT(*) FROM ad_insights_daily WHERE day BETWEEN ? AND ?) adRows,
-  (SELECT COALESCE(SUM(impressions),0) FROM ad_insights_daily WHERE day BETWEEN ? AND ?) impressions,
-  (SELECT COALESCE(SUM(link_clicks),0) FROM ad_insights_daily WHERE day BETWEEN ? AND ?) clicks,
-  (SELECT COUNT(*) FROM leads WHERE is_test=0 AND date(created_time) BETWEEN ? AND ? AND current_source_batch_id IS NULL) legacyLeads`;
+// Overview uses the same Agent Code scope for Leads, Ads, CPL and ROAS.
+// Rows without an assigned Ads batch are surfaced separately, not silently
+// attributed to an agent.
+export const summarySql = `WITH
+  selected_leads AS (
+    SELECT l.* FROM leads l WHERE l.is_test=0 AND date(l.created_time) BETWEEN ? AND ?
+      AND (?='' OR UPPER(TRIM(l.assigned_agent_id))=?)
+  ), selected_ads AS (
+    SELECT a.* FROM ad_insights_daily a JOIN import_batches b ON b.id=a.current_source_batch_id
+    WHERE a.day BETWEEN ? AND ? AND b.status='completed' AND b.type='ads' AND b.agent_id IS NOT NULL AND TRIM(b.agent_id)<>''
+      AND (?='' OR UPPER(TRIM(b.agent_id))=?)
+  ), unassigned_ads AS (
+    SELECT a.spend FROM ad_insights_daily a LEFT JOIN import_batches b ON b.id=a.current_source_batch_id
+    WHERE a.day BETWEEN ? AND ? AND (b.id IS NULL OR b.status<>'completed' OR b.type<>'ads' OR b.agent_id IS NULL OR TRIM(b.agent_id)='')
+  )
+  SELECT (SELECT COUNT(*) FROM selected_leads) leads,
+    (SELECT COALESCE(SUM(spend),0) FROM selected_ads) spend,
+    (SELECT COUNT(*) FROM selected_ads) adRows,
+    (SELECT COALESCE(SUM(impressions),0) FROM selected_ads) impressions,
+    (SELECT COALESCE(SUM(link_clicks),0) FROM selected_ads) clicks,
+    (SELECT COUNT(*) FROM selected_leads WHERE current_source_batch_id IS NULL) legacyLeads,
+    (SELECT COUNT(*) FROM unassigned_ads) unassignedAdRows,
+    (SELECT COALESCE(SUM(spend),0) FROM unassigned_ads) unassignedAdSpend`;
 
 export const campaignSql = `WITH
-  a AS (SELECT campaign_id,MAX(campaign_name) campaign_name,SUM(spend) spend
-    FROM ad_insights_daily WHERE day BETWEEN ? AND ? GROUP BY campaign_id),
+  a AS (SELECT a.campaign_id,MAX(a.campaign_name) campaign_name,SUM(a.spend) spend
+    FROM ad_insights_daily a JOIN import_batches b ON b.id=a.current_source_batch_id
+    WHERE a.day BETWEEN ? AND ? AND b.status='completed' AND b.type='ads' AND b.agent_id IS NOT NULL AND TRIM(b.agent_id)<>''
+      AND (?='' OR UPPER(TRIM(b.agent_id))=?) GROUP BY a.campaign_id),
   l AS (SELECT campaign_id,MAX(campaign_name) campaign_name,COUNT(*) leads
-    FROM leads WHERE is_test=0 AND date(created_time) BETWEEN ? AND ? GROUP BY campaign_id),
+    FROM leads WHERE is_test=0 AND date(created_time) BETWEEN ? AND ?
+      AND (?='' OR UPPER(TRIM(assigned_agent_id))=?) GROUP BY campaign_id),
   ids AS (SELECT campaign_id FROM a UNION SELECT campaign_id FROM l)
   SELECT ids.campaign_id campaignId,COALESCE(l.campaign_name,a.campaign_name,'Unknown') campaignName,
     a.spend,COALESCE(l.leads,0) leads

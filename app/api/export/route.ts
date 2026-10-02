@@ -51,30 +51,32 @@ export async function GET(request: Request) {
       headers = ["salesNo","sourceDate","projectName","unitNumber","lineCount","agentCode","commissionAmount","sourceBatchId","sourceFileName","sourceCoverageStart","sourceCoverageEnd"];
       values = rows.map(row => headers.map(header => row[header]));
     } else {
-      const report = await loadReport(from,to);
+      const report = await loadReport(from,to,agentId);
       const sourceBatchIds = Object.values(report.coverage).flatMap(item => item.batchIds).join(";");
       if (dataset === "campaign") {
         headers = ["campaignId","campaignName","spend","leads","cpl","sourceBatchIds"];
         values = (report.campaigns as DataRow[]).map(row => [row.campaignId,row.campaignName,row.spend,row.leads,Number(row.leads) && row.spend != null ? Number(row.spend)/Number(row.leads) : null,sourceBatchIds]);
       } else if (dataset === "monthly-roi") {
-        headers = ["month","agentId","leads","adRows","adSpend","sales","directCommissionLines","directCommission","roi","status","adsBatchIds","commissionBatchIds"];
+        headers = ["month","agentId","leads","adRows","adSpend","sales","directCommissionLines","directCommission","roi","commissionBasedRoas","marketingRoas","status","adsBatchIds","commissionBatchIds"];
         values = report.monthlyRoi.filter(row => !agentId || row.agentId === agentId).map(row => [
-          row.month,row.agentId,row.leads,row.adRows,row.spend,row.sales,row.commissionLines,row.commission,row.roi,
+          row.month,row.agentId,row.leads,row.adRows,row.spend,row.sales,row.commissionLines,row.commission,row.roi,row.commissionBasedRoas,row.marketingRoas,
           row.roi == null ? "No agent-assigned ad spend for this month" : "Calculated",row.adsBatchIds,row.commissionBatchIds,
         ]);
       } else {
         headers = ["metric","value","sourceBatchIds"];
         values = Object.entries(report.summary as DataRow).map(([metric,value]) => [metric,value,sourceBatchIds]);
+        values.push(...Object.entries(report.roas).map(([metric,value]) => [metric,value,sourceBatchIds]));
+        values.push(["marketingRoasStatus","Insufficient ad-attributed sale revenue data",sourceBatchIds]);
         values.push(...Object.entries(report.coverage).map(([type,item]) => [`${type}Coverage`,`${item.status}; ${item.missingDays} missing days`,item.batchIds.join(";")]));
       }
     }
     const metadata = ["reportFrom","reportTo","dateBasis","generatedAt"];
-    const dateBasis = dataset === "leads" ? "Lead created_time" : dataset === "ads" ? "Ads Day" : dataset === "bookings" ? "Legacy Booking booking_date" : dataset === "commissions" ? "Earliest line Date per Propwealth Sales No; only selected Agent Code direct Commission lines and amount; ROI uses Commission Payout Date instead" : dataset === "monthly-roi" ? "Agent-assigned Ads Day and direct Commission lines by Commission Payout Date; ROI=(commission-spend)/spend; no Lead-to-Sale link" : "Lead created_time and Ads Day; no Lead-to-Sale ROI attribution";
+    const dateBasis = dataset === "leads" ? "Lead created_time" : dataset === "ads" ? "Ads Day" : dataset === "bookings" ? "Legacy Booking booking_date" : dataset === "commissions" ? "Earliest line Date per Propwealth Sales No; only selected Agent Code direct Commission lines and amount; ROI uses Commission Payout Date instead" : dataset === "monthly-roi" ? "Agent-assigned Ads Day and direct Commission lines by Commission Payout Date; ROI=(commission-spend)/spend; commissionBasedRoas=commission/spend; marketingRoas unavailable without ad-attributed sale revenue" : dataset === "summary" ? "Selected Agent Code Leads created_time and Ads Day; eligible direct Commission by Payout Date and same agent-month; marketingRoas unavailable without ad-attributed sale revenue" : "Lead created_time and Ads Day; no Lead-to-Sale ROI attribution";
     headers.push(...metadata);
     values = values.map(row => [...row,from,to,dateBasis,generatedAt]);
     const body = csvText(headers,values);
     await audit(auth.admin.id, "csv_export", `${dataset} ${from}..${to} agent=${agentId || "all"} filtered=${Boolean(search)} rows=${values.length}`, request);
-    const fileName = `propwealth-${dataset}${dataset === "commissions" ? `-${agentId}` : ""}-${from}-${to}.csv`;
+    const fileName = `propwealth-${dataset}${agentId ? `-${agentId}` : ""}-${from}-${to}.csv`;
     return new Response(body, { headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${fileName}"`, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" } });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Export failed" }, { status: 400 });
